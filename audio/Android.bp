@@ -48,6 +48,7 @@ samsung_legacy_audio_cc_library_shared {
         "libaudioroute",
         "libdl",
     ],
+    header_libs: ["ril_headers"],
     local_include_dirs: ["include"],
     include_dirs: [
         "external/tinyalsa/include",
