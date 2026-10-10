@@ -41,6 +41,8 @@ LOCAL_SHARED_LIBRARIES := \
 	libsecril-client
 
 
+LOCAL_HEADER_LIBRARIES := ril_headers
+
 LOCAL_C_INCLUDES += \
 	$(LOCAL_PATH)/include \
 	external/tinyalsa/include \
