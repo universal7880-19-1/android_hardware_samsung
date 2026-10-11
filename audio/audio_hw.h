@@ -102,6 +102,7 @@ enum {
     SND_DEVICE_IN_CAMCORDER_MIC,
     SND_DEVICE_IN_VOICE_REC_HEADSET_MIC,
     SND_DEVICE_IN_VOICE_REC_MIC,
+    SND_DEVICE_IN_FM_TUNER,
     SND_DEVICE_IN_END,
 
     SND_DEVICE_MAX = SND_DEVICE_IN_END,
@@ -300,6 +301,9 @@ struct stream_in {
                                                      capture thread */
     struct pcm_config                   config;
     struct listnode                     pcm_dev_list;
+#ifdef SOUND_FM_DEVICE
+    struct pcm*                         fm_pcm;
+#endif
     int                                 standby;
     audio_source_t                      source;
     audio_devices_t                     devices;

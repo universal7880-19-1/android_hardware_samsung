@@ -108,7 +108,11 @@ static struct pcm_device_profile pcm_device_capture = {
     .card = SOUND_CARD,
     .id = SOUND_CAPTURE_DEVICE,
     .type = PCM_CAPTURE,
-    .devices = AUDIO_DEVICE_IN_BUILTIN_MIC|AUDIO_DEVICE_IN_WIRED_HEADSET|AUDIO_DEVICE_IN_BACK_MIC|AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET,
+    .devices = AUDIO_DEVICE_IN_BUILTIN_MIC|AUDIO_DEVICE_IN_WIRED_HEADSET|AUDIO_DEVICE_IN_BACK_MIC|AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET
+#ifdef SOUND_FM_DEVICE
+               | AUDIO_DEVICE_IN_FM_TUNER
+#endif
+               ,
 };
 
 static struct pcm_device_profile pcm_device_capture_low_latency = {
@@ -384,6 +388,7 @@ static const char * const device_table[SND_DEVICE_MAX] = {
     [SND_DEVICE_IN_CAMCORDER_MIC] = "camcorder-mic",
     [SND_DEVICE_IN_VOICE_REC_HEADSET_MIC] = "voice-rec-headset-mic",
     [SND_DEVICE_IN_VOICE_REC_MIC] = "voice-rec-mic",
+    [SND_DEVICE_IN_FM_TUNER] = "fm-capture",
 };
 
 static struct mixer_card *adev_get_mixer_for_card(struct audio_device *adev, int card)
@@ -681,6 +686,10 @@ static snd_device_t get_input_snd_device(struct audio_device *adev, audio_device
 
     ALOGV("%s: enter: out_device(%#x) in_device(%#x)",
           __func__, out_device, in_device);
+#ifdef SOUND_FM_DEVICE
+    if (in_device == (AUDIO_DEVICE_IN_FM_TUNER & ~AUDIO_DEVICE_BIT_IN))
+        return SND_DEVICE_IN_FM_TUNER;
+#endif
     if (mode == AUDIO_MODE_IN_CALL) {
         if (out_device == AUDIO_DEVICE_NONE) {
             ALOGE("%s: No output device set for voice call", __func__);
@@ -1106,6 +1115,20 @@ static int select_devices(struct audio_device *adev,
         enable_snd_device(adev, usecase, in_snd_device);
     }
 
+#ifdef SOUND_FM_DEVICE
+    if (out_snd_device != SND_DEVICE_NONE && adev->active_input &&
+            adev->active_input->devices == AUDIO_DEVICE_IN_FM_TUNER) {
+        struct audio_usecase *fm_uc = get_usecase_from_id(adev, adev->active_input->usecase);
+        if (fm_uc && fm_uc->in_snd_device == SND_DEVICE_IN_FM_TUNER) {
+            struct listnode *node;
+            list_for_each(node, &fm_uc->mixer_list) {
+                struct mixer_card *card = node_to_item(node, struct mixer_card,
+                                                      uc_list_node[fm_uc->id]);
+                audio_route_apply_and_update_path(card->audio_route, "fm-capture");
+            }
+        }
+    }
+#endif
     usecase->in_snd_device = in_snd_device;
     usecase->out_snd_device = out_snd_device;
 
@@ -1992,6 +2015,12 @@ static int stop_input_stream(struct stream_in *in)
         return -EINVAL;
     }
 
+#ifdef SOUND_FM_DEVICE
+    if (in->fm_pcm) {
+        pcm_close(in->fm_pcm);
+        in->fm_pcm = NULL;
+    }
+#endif
     /* Disable the tx device */
     disable_snd_device(adev, uc_info, uc_info->in_snd_device);
 
@@ -2117,6 +2146,19 @@ static int start_input_stream(struct stream_in *in)
           pcm_device->pcm_profile->config.channels,pcm_device->pcm_profile->config.rate,
           pcm_device->pcm_profile->config.format, pcm_device->pcm_profile->config.period_size);
 
+#ifdef SOUND_FM_DEVICE
+    if (in->devices == AUDIO_DEVICE_IN_FM_TUNER) {
+        struct pcm_config fm_config = in->config;
+        fm_config.rate = 48000;
+        fm_config.channels = 2;
+        in->fm_pcm = pcm_open(SOUND_CARD, SOUND_FM_DEVICE, PCM_OUT, &fm_config);
+        if (!in->fm_pcm || !pcm_is_ready(in->fm_pcm) || pcm_start(in->fm_pcm) < 0) {
+            ALOGE("%s: Cannot start FM digital interface", __func__);
+            ret = -EIO;
+            goto error_open;
+        }
+    }
+#endif
     pcm_device->pcm = pcm_open(pcm_device->pcm_profile->card, pcm_device->pcm_profile->id,
                                    PCM_IN | PCM_MONOTONIC, &pcm_device->pcm_profile->config);
 
@@ -3431,7 +3473,8 @@ false_alarm:
      * Instead of writing zeroes here, we could trust the hardware
      * to always provide zeroes when muted.
      */
-    if (read_and_process_successful == true && adev->mic_mute)
+    if (read_and_process_successful == true && adev->mic_mute &&
+            in->devices != AUDIO_DEVICE_IN_FM_TUNER)
         memset(buffer, 0, bytes);
 
 exit:
