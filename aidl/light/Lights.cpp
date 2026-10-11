@@ -71,7 +71,10 @@ ndk::ScopedAStatus Lights::setLightState(int32_t id, const HwLightState& state) 
 }
 
 void Lights::handleBacklight(const HwLightState& state) {
-    uint32_t max_brightness = get(PANEL_MAX_BRIGHTNESS_NODE, MAX_INPUT_BRIGHTNESS);
+    uint32_t max_brightness = MAX_INPUT_BRIGHTNESS;
+#ifdef PANEL_MAX_BRIGHTNESS_NODE
+    max_brightness = get(PANEL_MAX_BRIGHTNESS_NODE, MAX_INPUT_BRIGHTNESS);
+#endif
     uint32_t brightness = rgbToBrightness(state);
 
     if (max_brightness != MAX_INPUT_BRIGHTNESS) {
