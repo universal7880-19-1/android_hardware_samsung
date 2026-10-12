@@ -4345,8 +4345,9 @@ static int adev_open(const hw_module_t *module, const char *name,
         return -EINVAL;
     }
 
-    if (amplifier_open() != -ENOENT) {
-        ALOGE("Amplifier initialization failed");
+    int amp_ret = amplifier_open();
+    if (amp_ret != 0 && amp_ret != -ENOENT) {
+        ALOGE("Amplifier initialization failed: %s", strerror(-amp_ret));
     }
 
     *device = &adev->device.common;
