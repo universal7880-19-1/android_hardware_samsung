@@ -2152,8 +2152,13 @@ static int start_input_stream(struct stream_in *in)
         fm_config.rate = 48000;
         fm_config.channels = 2;
         in->fm_pcm = pcm_open(SOUND_CARD, SOUND_FM_DEVICE, PCM_OUT, &fm_config);
-        if (!in->fm_pcm || !pcm_is_ready(in->fm_pcm) || pcm_start(in->fm_pcm) < 0) {
-            ALOGE("%s: Cannot start FM digital interface", __func__);
+        /* This interface enables FM digital output in the driver's prepare
+         * callback. Audio is captured through the input PCM below, so there
+         * is no playback data to start on this interface.
+         */
+        if (!in->fm_pcm || !pcm_is_ready(in->fm_pcm) || pcm_prepare(in->fm_pcm) < 0) {
+            ALOGE("%s: Cannot prepare FM digital interface: %s", __func__,
+                  in->fm_pcm ? pcm_get_error(in->fm_pcm) : "pcm_open failed");
             ret = -EIO;
             goto error_open;
         }
