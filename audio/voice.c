@@ -159,15 +159,29 @@ void stop_voice_session_bt_sco(struct audio_device *adev) {
         stop_voice_session(adev->voice.session);
 }
 
+static void close_pcm(struct pcm **pcm)
+{
+    if (*pcm != NULL) {
+        if (pcm_is_ready(*pcm))
+            pcm_stop(*pcm);
+        pcm_close(*pcm);
+        *pcm = NULL;
+    }
+}
+
 /* must be called with the hw device mutex locked, OK to hold other mutexes */
-void start_voice_session_bt_sco(struct audio_device *adev)
+int start_voice_session_bt_sco(struct audio_device *adev)
 {
     struct pcm_config *voice_sco_config;
+    int ret;
 
-    if (adev->pcm_sco_rx != NULL || adev->pcm_sco_tx != NULL) {
+    if (adev->pcm_sco_rx != NULL && adev->pcm_sco_tx != NULL) {
         ALOGW("%s: SCO PCMs already open!\n", __func__);
-        return;
+        return 0;
     }
+
+    close_pcm(&adev->pcm_sco_rx);
+    close_pcm(&adev->pcm_sco_tx);
 
     ALOGV("%s: Opening SCO PCMs", __func__);
 
@@ -183,37 +197,43 @@ void start_voice_session_bt_sco(struct audio_device *adev)
                                    SOUND_PLAYBACK_SCO_DEVICE,
                                    PCM_OUT|PCM_MONOTONIC,
                                    voice_sco_config);
-    if (adev->pcm_sco_rx != NULL && !pcm_is_ready(adev->pcm_sco_rx)) {
+    if (adev->pcm_sco_rx == NULL || !pcm_is_ready(adev->pcm_sco_rx)) {
         ALOGE("%s: cannot open PCM SCO RX stream: %s",
-              __func__, pcm_get_error(adev->pcm_sco_rx));
-        goto err_sco_rx;
+              __func__, adev->pcm_sco_rx ? pcm_get_error(adev->pcm_sco_rx) : "out of memory");
+        ret = -EIO;
+        goto error;
     }
 
     adev->pcm_sco_tx = pcm_open(SOUND_CARD,
                                    SOUND_CAPTURE_SCO_DEVICE,
                                    PCM_IN|PCM_MONOTONIC,
                                    voice_sco_config);
-    if (adev->pcm_sco_tx && !pcm_is_ready(adev->pcm_sco_tx)) {
+    if (adev->pcm_sco_tx == NULL || !pcm_is_ready(adev->pcm_sco_tx)) {
         ALOGE("%s: cannot open PCM SCO TX stream: %s",
-              __func__, pcm_get_error(adev->pcm_sco_tx));
-        goto err_sco_tx;
+              __func__, adev->pcm_sco_tx ? pcm_get_error(adev->pcm_sco_tx) : "out of memory");
+        ret = -EIO;
+        goto error;
     }
 
-    pcm_start(adev->pcm_sco_rx);
-    pcm_start(adev->pcm_sco_tx);
+    if (pcm_start(adev->pcm_sco_rx) < 0 || pcm_start(adev->pcm_sco_tx) < 0) {
+        ALOGE("%s: cannot start SCO PCMs", __func__);
+        ret = -EIO;
+        goto error;
+    }
 
     /* audio codecs like wm5201 need open modem pcm while using bt sco */
-    if (adev->mode != AUDIO_MODE_IN_CALL)
-        start_voice_session(adev->voice.session);
+    if (adev->mode != AUDIO_MODE_IN_CALL) {
+        ret = start_voice_session(adev->voice.session);
+        if (ret < 0)
+            goto error;
+    }
 
-    return;
+    return 0;
 
-err_sco_tx:
-    pcm_close(adev->pcm_sco_tx);
-    adev->pcm_sco_tx = NULL;
-err_sco_rx:
-    pcm_close(adev->pcm_sco_rx);
-    adev->pcm_sco_rx = NULL;
+error:
+    close_pcm(&adev->pcm_sco_tx);
+    close_pcm(&adev->pcm_sco_rx);
+    return ret;
 }
 /*
  * This function must be called with hw device mutex locked, OK to hold other
@@ -223,10 +243,13 @@ int start_voice_session(struct voice_session *session)
 {
     struct pcm_config *voice_config;
 
-    if (session->pcm_voice_rx != NULL || session->pcm_voice_tx != NULL) {
+    if (session->pcm_voice_rx != NULL && session->pcm_voice_tx != NULL) {
         ALOGW("%s: Voice PCMs already open!\n", __func__);
         return 0;
     }
+
+    close_pcm(&session->pcm_voice_rx);
+    close_pcm(&session->pcm_voice_tx);
 
     ALOGV("%s: Opening voice PCMs", __func__);
 
@@ -244,34 +267,28 @@ int start_voice_session(struct voice_session *session)
                                      SOUND_PLAYBACK_VOICE_DEVICE,
                                      PCM_OUT|PCM_MONOTONIC,
                                      voice_config);
-    if (session->pcm_voice_rx != NULL && !pcm_is_ready(session->pcm_voice_rx)) {
+    if (session->pcm_voice_rx == NULL || !pcm_is_ready(session->pcm_voice_rx)) {
         ALOGE("%s: cannot open PCM voice RX stream: %s",
               __func__,
-              pcm_get_error(session->pcm_voice_rx));
-
-        pcm_close(session->pcm_voice_tx);
-        session->pcm_voice_tx = NULL;
-
-        return -ENOMEM;
+              session->pcm_voice_rx ? pcm_get_error(session->pcm_voice_rx) : "out of memory");
+        goto error;
     }
 
     session->pcm_voice_tx = pcm_open(SOUND_CARD,
                                      SOUND_CAPTURE_VOICE_DEVICE,
                                      PCM_IN|PCM_MONOTONIC,
                                      voice_config);
-    if (session->pcm_voice_tx != NULL && !pcm_is_ready(session->pcm_voice_tx)) {
+    if (session->pcm_voice_tx == NULL || !pcm_is_ready(session->pcm_voice_tx)) {
         ALOGE("%s: cannot open PCM voice TX stream: %s",
               __func__,
-              pcm_get_error(session->pcm_voice_tx));
-
-        pcm_close(session->pcm_voice_rx);
-        session->pcm_voice_rx = NULL;
-
-        return -ENOMEM;
+              session->pcm_voice_tx ? pcm_get_error(session->pcm_voice_tx) : "out of memory");
+        goto error;
     }
 
-    pcm_start(session->pcm_voice_rx);
-    pcm_start(session->pcm_voice_tx);
+    if (pcm_start(session->pcm_voice_rx) < 0 || pcm_start(session->pcm_voice_tx) < 0) {
+        ALOGE("%s: cannot start voice PCMs", __func__);
+        goto error;
+    }
 
 #ifdef AUDIENCE_EARSMART_IC
     ALOGV("%s: Enabling Audience IC", __func__);
@@ -287,6 +304,10 @@ int start_voice_session(struct voice_session *session)
     }
 
     return 0;
+error:
+    close_pcm(&session->pcm_voice_tx);
+    close_pcm(&session->pcm_voice_rx);
+    return -EIO;
 }
 
 /*
