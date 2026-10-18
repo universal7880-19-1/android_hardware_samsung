@@ -59,11 +59,17 @@ static int ril_internal_wb_amr_callback(HRilClient client __unused,
         return -1;
     }
 
-    if (datalen != 1) {
+    if (data == NULL) {
         return -1;
     }
 
-    wb_amr_type = *((int *)data);
+    if (datalen == 1) {
+        wb_amr_type = *((const uint8_t *)data);
+    } else if (datalen == sizeof(wb_amr_type)) {
+        memcpy(&wb_amr_type, data, sizeof(wb_amr_type));
+    } else {
+        return -1;
+    }
 
     _wb_amr_callback(_wb_amr_data, wb_amr_type);
 
