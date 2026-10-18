@@ -2483,13 +2483,20 @@ int start_voice_call(struct audio_device *adev)
 
     list_add_tail(&adev->usecase_list, &uc_info->adev_list_node);
 
-    select_devices(adev, USECASE_VOICE_CALL);
+    ret = select_devices(adev, USECASE_VOICE_CALL);
+    if (ret < 0)
+        goto error;
 
-    start_voice_session(adev->voice.session);
+    ret = start_voice_session(adev->voice.session);
+    if (ret < 0)
+        goto error;
 
     /* set cached volume */
     set_voice_volume_l(adev, adev->voice.volume);
 
+    goto exit;
+error:
+    stop_voice_call(adev);
 exit:
     ALOGV("%s: exit", __func__);
     return ret;
@@ -2733,8 +2740,10 @@ static int out_set_parameters(struct audio_stream *stream, const char *kvpairs)
             /* Turn on bluetooth sco if needed */
             if ((adev->mode == AUDIO_MODE_IN_COMMUNICATION || adev->mode == AUDIO_MODE_IN_CALL) &&
                 (out->devices & AUDIO_DEVICE_OUT_ALL_SCO) && !adev->bt_sco_active) {
+                ret = start_voice_session_bt_sco(adev);
+                if (ret < 0)
+                    goto unlock;
                 adev->bt_sco_active = true;
-                start_voice_session_bt_sco(adev);
             }
             else if (!(out->devices & AUDIO_DEVICE_OUT_ALL_SCO) && adev->bt_sco_active) {
                 adev->bt_sco_active = false;
@@ -2743,7 +2752,7 @@ static int out_set_parameters(struct audio_stream *stream, const char *kvpairs)
 
             if ((adev->mode == AUDIO_MODE_IN_CALL) && !adev->voice.in_call &&
                     (out == adev->primary_output)) {
-                start_voice_call(adev);
+                ret = start_voice_call(adev);
             } else if ((adev->mode == AUDIO_MODE_IN_CALL) &&
                        adev->voice.in_call &&
                        (out == adev->primary_output)) {
@@ -2753,10 +2762,11 @@ static int out_set_parameters(struct audio_stream *stream, const char *kvpairs)
                      * we do not get any output.
                      */
                     stop_voice_call(adev);
-                    start_voice_call(adev);
+                    ret = start_voice_call(adev);
             }
         }
 
+unlock:
         pthread_mutex_unlock(&adev->lock);
         pthread_mutex_unlock(&out->lock);
 #ifdef PREPROCESSING_ENABLED
