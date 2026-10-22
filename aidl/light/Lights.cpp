@@ -76,6 +76,11 @@ void Lights::handleBacklight(const HwLightState& state) {
     max_brightness = get(PANEL_MAX_BRIGHTNESS_NODE, MAX_INPUT_BRIGHTNESS);
 #endif
     uint32_t brightness = rgbToBrightness(state);
+#ifdef PANEL_BRIGHTNESS_MAP
+    static_assert(sizeof(PANEL_BRIGHTNESS_MAP) / sizeof(PANEL_BRIGHTNESS_MAP[0]) ==
+                  MAX_INPUT_BRIGHTNESS + 1);
+    brightness = PANEL_BRIGHTNESS_MAP[brightness];
+#endif
 
     if (max_brightness != MAX_INPUT_BRIGHTNESS) {
         brightness = brightness * max_brightness / MAX_INPUT_BRIGHTNESS;
