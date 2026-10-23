@@ -1,0 +1,80 @@
+// Copyright (C) 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+
+soong_config_module_type {
+    name: "samsung_legacy_audio_cc_library_shared",
+    module_type: "cc_library_shared",
+    config_namespace: "samsung_legacy_audio",
+    value_variables: [
+        "bootloader_board",
+        "ril_client_library",
+        "audio_header_library",
+    ],
+    properties: [
+        "name",
+        "shared_libs",
+        "header_libs",
+    ],
+}
+
+samsung_legacy_audio_cc_library_shared {
+    name: "audio.primary.target_bootloader_board_name",
+    enabled: select(soong_config_variable("samsung_legacy_audio", "enabled"), {
+        "true": true,
+        default: false,
+    }),
+    vendor: true,
+    relative_install_path: "hw",
+    arch: {
+        arm: {
+            instruction_set: "arm",
+        },
+    },
+    srcs: [
+        "audience.c",
+        "audio_hw.c",
+        "compress_offload.c",
+        "ril_interface.c",
+        "voice.c",
+    ],
+    shared_libs: [
+        "liblog",
+        "libcutils",
+        "libaudioutils",
+        "libhardware",
+        "libprocessgroup",
+        "libtinyalsa",
+        "libtinycompress",
+        "libaudioroute",
+        "libdl",
+    ],
+    local_include_dirs: ["include"],
+    include_dirs: [
+        "external/tinyalsa/include",
+        "external/tinycompress/include",
+        "hardware/libhardware/include",
+        "hardware/samsung/ril/libsecril-client",
+        "system/media/audio_utils/include",
+        "system/media/audio_route/include",
+        "system/media/audio_effects/include",
+    ],
+    cflags: [
+        "-Werror",
+        "-Wall",
+        "-DPREPROCESSING_ENABLED",
+    ],
+    soong_config_variables: {
+        bootloader_board: {
+            name: "audio.primary.%s",
+        },
+        ril_client_library: {
+            shared_libs: ["%s"],
+            conditions_default: {
+                shared_libs: ["libsecril-client"],
+            },
+        },
+        audio_header_library: {
+            header_libs: ["%s"],
+        },
+    },
+}
