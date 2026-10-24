@@ -3702,6 +3702,8 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
         goto error_config;
     }
 
+    list_init(&out->pcm_dev_list);
+
     if (devices == AUDIO_DEVICE_NONE)
         devices = AUDIO_DEVICE_OUT_SPEAKER;
 
@@ -4124,6 +4126,8 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
     if (in == NULL) {
         return -ENOMEM;
     }
+
+    list_init(&in->pcm_dev_list);
 
     in->stream.common.get_sample_rate = in_get_sample_rate;
     in->stream.common.set_sample_rate = in_set_sample_rate;
